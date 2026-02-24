@@ -153,6 +153,18 @@ provider "keycloak" {
 }
 ```
 
+### Example Usage (with manual server version)
+```hcl
+provider "keycloak" {
+	client_id      = "terraform"
+	client_secret  = "884e0f95-0f42-4a63-9b1f-94274655669e"
+	url            = "http://localhost:8080"
+	server_version = "26.0.0"
+}
+```
+
+This is useful when the Keycloak server doesn't expose version information through the `/serverinfo` endpoint, such as when using Red Hat SSO with version information disabled for security reasons.
+
 ## Argument Reference
 
 The following arguments are supported:
@@ -176,4 +188,6 @@ The following arguments are supported:
 - `tls_client_certificate` - (Optional) The TLS client certificate in PEM format when the keycloak server is configured with TLS mutual authentication.
 - `tls_client_private_key` - (Optional) The TLS client pkcs1 private key in PEM format when the keycloak server is configured with TLS mutual authentication.
 - `base_path` - (Optional) The base path used for accessing the Keycloak REST API.  Defaults to the environment variable `KEYCLOAK_BASE_PATH`, or an empty string if the environment variable is not specified. Note that users of the legacy distribution of Keycloak will need to set this attribute to `/auth`.
+- `red_hat_sso` - (Optional) When true, the provider will treat the Keycloak instance as a Red Hat SSO server, specifically when parsing the version returned from the /serverinfo API endpoint. Defaults to `false`.
+- `server_version` - (Optional) Manually specify the Keycloak server version. When set, the provider will skip fetching the version from the server's /serverinfo endpoint. This is useful when the server doesn't expose version information (e.g., Red Hat SSO with disabled version info). Defaults to the environment variable `KEYCLOAK_SERVER_VERSION`. If the server version cannot be determined from the /serverinfo endpoint and this parameter is not set, an error will be returned.
 - `additional_headers` - (Optional) A map of custom HTTP headers to add to each request to the Keycloak API.
