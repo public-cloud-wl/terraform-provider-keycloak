@@ -29,20 +29,20 @@ import (
 )
 
 type KeycloakClient struct {
-	baseUrl              string
-	authUrl              string
-	realm                string
-	clientCredentials    *ClientCredentials
-	httpClient           *http.Client
-	initialLogin         bool
-	userAgent            string
-	version              *version.Version
-	additionalHeaders    map[string]string
-	debug                bool
-	redHatSSO            bool
-	accessTokenProvided  bool
+	baseUrl               string
+	authUrl               string
+	realm                 string
+	clientCredentials     *ClientCredentials
+	httpClient            *http.Client
+	initialLogin          bool
+	userAgent             string
+	version               *version.Version
+	additionalHeaders     map[string]string
+	debug                 bool
+	redHatSSO             bool
+	accessTokenProvided   bool
 	providedServerVersion string
-	Mutex                *mutex.KeyValue
+	Mutex                 *mutex.KeyValue
 }
 
 type ClientCredentials struct {
@@ -112,18 +112,18 @@ func NewKeycloakClient(ctx context.Context, url, basePath, adminUrl, clientId, c
 	}
 
 	keycloakClient := KeycloakClient{
-		baseUrl:              baseUrl,
-		authUrl:              authUrl,
-		clientCredentials:    clientCredentials,
-		httpClient:           httpClient,
-		initialLogin:         initialLogin,
-		realm:                realm,
-		userAgent:            userAgent,
-		redHatSSO:            redHatSSO,
+		baseUrl:               baseUrl,
+		authUrl:               authUrl,
+		clientCredentials:     clientCredentials,
+		httpClient:            httpClient,
+		initialLogin:          initialLogin,
+		realm:                 realm,
+		userAgent:             userAgent,
+		redHatSSO:             redHatSSO,
 		providedServerVersion: serverVersion,
-		additionalHeaders:    additionalHeaders,
-		accessTokenProvided:  accessToken != "",
-		Mutex:                mutex.New(),
+		additionalHeaders:     additionalHeaders,
+		accessTokenProvided:   accessToken != "",
+		Mutex:                 mutex.New(),
 	}
 
 	if accessToken == "" && keycloakClient.initialLogin {
