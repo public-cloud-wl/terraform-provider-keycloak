@@ -2,16 +2,92 @@ package keycloak
 
 import (
 	"context"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/keycloak/terraform-provider-keycloak/helper"
 )
 
-var requiredEnvironmentVariables = []string{
-	"KEYCLOAK_CLIENT_ID",
-	"KEYCLOAK_URL",
-	"KEYCLOAK_REALM",
+func init() {
+	helper.UpdateEnvFromTestEnvIfPresent()
+}
+
+func TestAccKeycloakClientConnect(t *testing.T) {
+
+	ctx := context.Background()
+
+	helper.CheckRequiredEnvironmentVariables(t)
+
+	clientTimeout := checkClientTimeout(t)
+
+	keycloakClient, err := NewKeycloakClient(ctx, os.Getenv("KEYCLOAK_URL"), "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), true, clientTimeout, os.Getenv("KEYCLOAK_TLS_CA_CERT"), true, os.Getenv("KEYCLOAK_TLS_CLIENT_CERT"), os.Getenv("KEYCLOAK_TLS_CLIENT_KEY"), "", false, "", map[string]string{
+		"foo": "bar",
+	})
+
+	keycloakClientChecks(t, err, keycloakClient, ctx)
+}
+
+func TestAccKeycloakClientConnectAccessTokenAuth(t *testing.T) {
+
+	ctx := context.Background()
+
+	helper.CheckRequiredEnvironmentVariables(t)
+
+	if os.Getenv("KEYCLOAK_ACCESS_TOKEN") == "" {
+		t.Skip("Skipping: KEYCLOAK_ACCESS_TOKEN must be present to test auth with provided access token")
+	}
+
+	clientTimeout := checkClientTimeout(t)
+
+	keycloakClient, err := NewKeycloakClient(ctx, os.Getenv("KEYCLOAK_URL"), "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), true, clientTimeout, os.Getenv("KEYCLOAK_TLS_CA_CERT"), true, os.Getenv("KEYCLOAK_TLS_CLIENT_CERT"), os.Getenv("KEYCLOAK_TLS_CLIENT_KEY"), "", false, "", map[string]string{
+		"foo": "bar",
+	})
+	keycloakClientChecks(t, err, keycloakClient, ctx)
+}
+
+func TestAccKeycloakClientConnectHttpsMtlsAuth(t *testing.T) {
+
+	ctx := context.Background()
+
+	helper.CheckRequiredEnvironmentVariables(t)
+
+	clientTimeout := checkClientTimeout(t)
+
+	if os.Getenv("KEYCLOAK_TLS_CLIENT_CERT") == "" || os.Getenv("KEYCLOAK_TLS_CLIENT_KEY") == "" {
+		t.Skip("Skipping: KEYCLOAK_TLS_CLIENT_CERT and KEYCLOAK_TLS_CLIENT_KEY must both be set to test mTLS")
+	}
+
+	// use the keycloak client with plain http to read Keycloak version
+	keycloakHttpUrl := os.Getenv("KEYCLOAK_URL_HTTP")
+	if keycloakHttpUrl == "" {
+		if keycloakHttpUrl = os.Getenv("KEYCLOAK_URL"); strings.HasPrefix(keycloakHttpUrl, "https") {
+			t.Fatalf("KEYCLOAK_URL_HTTP must also be set to https when using https")
+		}
+	}
+	keycloakClient, err := NewKeycloakClient(ctx, keycloakHttpUrl, "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), true, clientTimeout, "", true, "", "", "", false, "", map[string]string{})
+
+	_, err = keycloakClient.Version(ctx)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// skip test if running 26.0 or lower
+	if v, _ := keycloakClient.VersionIsLessThanOrEqualTo(ctx, Version_26); v {
+		t.Skip("We only test Keycloak > 26.0")
+	}
+
+	keycloakUrl := os.Getenv("KEYCLOAK_URL")
+	if !strings.HasPrefix(keycloakUrl, "https://") {
+		// only run tests for https URL
+		t.Skip("We only test mtls when Keycloak is used with an https:// url")
+	}
+
+	// then try again to connect with Keycloak but this time via https with mtls client auth
+	mtlsKeycloakClient, err := NewKeycloakClient(ctx, keycloakUrl, "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), true, clientTimeout, os.Getenv("KEYCLOAK_TLS_CA_CERT"), true, os.Getenv("KEYCLOAK_TLS_CLIENT_CERT"), os.Getenv("KEYCLOAK_TLS_CLIENT_KEY"), "", false, "", map[string]string{})
+	keycloakClientChecks(t, err, mtlsKeycloakClient, ctx)
 }
 
 // Some actions, such as creating a realm, require a refresh
@@ -27,28 +103,11 @@ var requiredEnvironmentVariables = []string{
 func TestAccKeycloakApiClientRefresh(t *testing.T) {
 	ctx := context.Background()
 
-	for _, requiredEnvironmentVariable := range requiredEnvironmentVariables {
-		if value := os.Getenv(requiredEnvironmentVariable); value == "" {
-			t.Fatalf("%s must be set before running acceptance tests.", requiredEnvironmentVariable)
-		}
-	}
+	helper.CheckRequiredEnvironmentVariables(t)
 
-	if v := os.Getenv("KEYCLOAK_CLIENT_SECRET"); v == "" {
-		if v := os.Getenv("KEYCLOAK_USER"); v == "" {
-			t.Fatal("KEYCLOAK_USER must be set for acceptance tests")
-		}
-		if v := os.Getenv("KEYCLOAK_PASSWORD"); v == "" {
-			t.Fatal("KEYCLOAK_PASSWORD must be set for acceptance tests")
-		}
-	}
+	clientTimeout := checkClientTimeout(t)
 
-	// Convert KEYCLOAK_CLIENT_TIMEOUT to int
-	clientTimeout, err := strconv.Atoi(os.Getenv("KEYCLOAK_CLIENT_TIMEOUT"))
-	if err != nil {
-		t.Fatal("KEYCLOAK_CLIENT_TIMEOUT must be an integer")
-	}
-
-	keycloakClient, err := NewKeycloakClient(ctx, os.Getenv("KEYCLOAK_URL"), "", os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), true, clientTimeout, "", false, "", false, map[string]string{
+	keycloakClient, err := NewKeycloakClient(ctx, os.Getenv("KEYCLOAK_URL"), "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), true, clientTimeout, os.Getenv("KEYCLOAK_TLS_CA_CERT"), false, os.Getenv("KEYCLOAK_TLS_CLIENT_CERT"), os.Getenv("KEYCLOAK_TLS_CLIENT_KEY"), "", false, "", map[string]string{
 		"foo": "bar",
 	})
 	if err != nil {
@@ -108,4 +167,100 @@ func TestAccKeycloakApiClientRefresh(t *testing.T) {
 			t.Fatalf("expected token type to remain the same after refresh")
 		}
 	}
+}
+
+func checkClientTimeout(t *testing.T) int {
+	// Convert KEYCLOAK_CLIENT_TIMEOUT to int
+	clientTimeout, err := strconv.Atoi(os.Getenv("KEYCLOAK_CLIENT_TIMEOUT"))
+	if err != nil {
+		t.Fatal("KEYCLOAK_CLIENT_TIMEOUT must be an integer")
+	}
+	return clientTimeout
+}
+
+func keycloakClientChecks(t *testing.T, err error, keycloakClient *KeycloakClient, ctx context.Context) {
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	version, err := keycloakClient.Version(ctx)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	if version == nil {
+		t.Fatalf("%s", "Server Version not found")
+	}
+}
+
+func TestAccKeycloakClientConnectWithProvidedServerVersion(t *testing.T) {
+	ctx := context.Background()
+
+	helper.CheckRequiredEnvironmentVariables(t)
+
+	clientTimeout := checkClientTimeout(t)
+
+	// Test with a provided server version
+	providedVersion := "26.0.0"
+
+	keycloakClient, err := NewKeycloakClient(ctx, os.Getenv("KEYCLOAK_URL"), "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), true, clientTimeout, os.Getenv("KEYCLOAK_TLS_CA_CERT"), true, os.Getenv("KEYCLOAK_TLS_CLIENT_CERT"), os.Getenv("KEYCLOAK_TLS_CLIENT_KEY"), "", false, providedVersion, map[string]string{
+		"foo": "bar",
+	})
+
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// Verify that the provided version is used
+	if keycloakClient.providedServerVersion != providedVersion {
+		t.Fatalf("expected providedServerVersion to be %s, got %s", providedVersion, keycloakClient.providedServerVersion)
+	}
+
+	version, err := keycloakClient.Version(ctx)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	if version.String() != providedVersion {
+		t.Fatalf("expected version to be %s, got %s", providedVersion, version.String())
+	}
+}
+
+func TestAccKeycloakClientSkipGetServerInfoWhenVersionProvided(t *testing.T) {
+	ctx := context.Background()
+
+	helper.CheckRequiredEnvironmentVariables(t)
+
+	clientTimeout := checkClientTimeout(t)
+
+	// Test with a provided server version
+	providedVersion := "26.0.0"
+
+	// Create client with provided version and initialLogin=false to avoid calling GetServerInfo
+	keycloakClient, err := NewKeycloakClient(ctx, os.Getenv("KEYCLOAK_URL"), "", os.Getenv("KEYCLOAK_ADMIN_URL"), os.Getenv("KEYCLOAK_CLIENT_ID"), os.Getenv("KEYCLOAK_CLIENT_SECRET"), os.Getenv("KEYCLOAK_REALM"), os.Getenv("KEYCLOAK_USER"), os.Getenv("KEYCLOAK_PASSWORD"), os.Getenv("KEYCLOAK_ACCESS_TOKEN"), "", "", os.Getenv("KEYCLOAK_JWT_TOKEN"), os.Getenv("KEYCLOAK_JWT_TOKEN_FILE"), false, clientTimeout, os.Getenv("KEYCLOAK_TLS_CA_CERT"), true, os.Getenv("KEYCLOAK_TLS_CLIENT_CERT"), os.Getenv("KEYCLOAK_TLS_CLIENT_KEY"), "", false, providedVersion, map[string]string{})
+
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// Manually trigger login which would normally call GetServerInfo
+	err = keycloakClient.login(ctx)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// Verify that the version was set from the provided value
+	version, err := keycloakClient.Version(ctx)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	if version.String() != providedVersion {
+		t.Fatalf("expected version to be %s, got %s", providedVersion, version.String())
+	}
+
+	// Note: In a real integration test environment, we could set up a mock server
+	// and verify that GetServerInfo endpoint was not called. For acceptance tests
+	// against a real Keycloak instance, we verify the behavior by confirming the
+	// version is set correctly without errors, which proves the code path worked.
 }

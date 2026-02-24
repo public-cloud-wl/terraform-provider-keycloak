@@ -11,6 +11,7 @@ type Group struct {
 	RealmId     string              `json:"-"`
 	ParentId    string              `json:"-"`
 	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
 	Path        string              `json:"path,omitempty"`
 	SubGroups   []*Group            `json:"subGroups,omitempty"`
 	RealmRoles  []string            `json:"realmRoles,omitempty"`
@@ -19,44 +20,23 @@ type Group struct {
 }
 
 /*
- * There is no way to get a subgroup's parent ID using the Keycloak API (that I know of, PRs are welcome)
- * The best we can do is check subGroup's path with the group's path to figure out what sub-path to follow
- * until we find it.
+ * Resolve a subgroup's parent ID using the Keycloak group-by-path API
  */
 func (keycloakClient *KeycloakClient) groupParentId(ctx context.Context, group *Group) (string, error) {
-	// Check the path of the group being passed in.
+	var parentPath = strings.TrimSuffix(group.Path, group.Name)
 	// If there is only one group in the path, then this is a top-level group with no parentId
-	if group.Path == "/"+group.Name {
+	if parentPath == "/" {
 		return "", nil
 	}
 
-	groups, err := keycloakClient.ListGroupsWithName(ctx, group.RealmId, group.Name)
+	var parentGroup Group
+
+	err := keycloakClient.get(ctx, fmt.Sprintf("/realms/%s/group-by-path/%s", group.RealmId, strings.TrimPrefix(parentPath, "/")), &parentGroup, nil)
 	if err != nil {
 		return "", err
 	}
 
-	var parentGroup Group
-	if parentGroupId, found := findParentGroup(*group, groups, parentGroup); found {
-		return parentGroupId, nil
-	}
-
-	// maybe panic here?  this should never happen
-	return "", fmt.Errorf("unable to determine parent ID for group with path %s", group.Path)
-}
-
-func findParentGroup(group Group, ingroups []*Group, parentGroup Group) (string, bool) {
-	for _, grp := range ingroups {
-		if grp.Id == group.Id {
-			return parentGroup.Id, true
-		}
-		if strings.HasPrefix(group.Path, grp.Path+"/") {
-
-			if parentGroupId, found := findParentGroup(group, grp.SubGroups, *grp); found {
-				return parentGroupId, found
-			}
-		}
-	}
-	return "", false
+	return parentGroup.Id, nil
 }
 
 func (keycloakClient *KeycloakClient) ValidateGroupMembers(usernames []interface{}) error {
@@ -140,7 +120,7 @@ func (keycloakClient *KeycloakClient) GetGroupByName(ctx context.Context, realmI
 	}
 
 	if len(groups) == 0 {
-		return nil, fmt.Errorf("no group with name " + name + " found")
+		return nil, fmt.Errorf("no group with name %s found", name)
 	}
 
 	// The search may return more than 1 result even if there is a group exactly matching the search string
@@ -162,7 +142,7 @@ func (keycloakClient *KeycloakClient) GetGroupByName(ctx context.Context, realmI
 		return group, nil
 	}
 
-	return nil, fmt.Errorf("no group with name " + name + " found")
+	return nil, fmt.Errorf("no group with name %s found", name)
 }
 
 /*

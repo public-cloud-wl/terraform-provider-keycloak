@@ -104,6 +104,10 @@ func dataSourceKeycloakOpenidClient() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"require_dpop_bound_tokens": {
+				Type:     schema.TypeBool,
+				Computed: true,
+			},
 			"access_token_lifespan": {
 				Type:     schema.TypeString,
 				Computed: true,
@@ -202,6 +206,14 @@ func dataSourceKeycloakOpenidClient() *schema.Resource {
 			},
 			"use_refresh_tokens_client_credentials": {
 				Type:     schema.TypeBool,
+				Computed: true,
+			},
+			"standard_token_exchange_enabled": {
+				Type:     schema.TypeBool,
+				Computed: true,
+			},
+			"allow_refresh_token_in_standard_token_exchange": {
+				Type:     schema.TypeString,
 				Computed: true,
 			},
 			"backchannel_logout_url": {

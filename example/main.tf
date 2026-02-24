@@ -153,7 +153,7 @@ resource "keycloak_group" "foo" {
 resource "keycloak_group" "nested_foo" {
   realm_id  = keycloak_realm.test.id
   parent_id = keycloak_group.foo.id
-  name      = "nested-foo"
+  name      = "nested/\\-foo"
 }
 
 resource "keycloak_group" "bar" {
@@ -677,8 +677,8 @@ resource "keycloak_saml_client" "saml_client" {
   sign_assertions         = true
   include_authn_statement = true
 
-  signing_certificate = file("../provider/misc/saml-cert.pem")
-  signing_private_key = file("../provider/misc/saml-key.pem")
+  signing_certificate = file("../provider/testdata/saml-cert.pem")
+  signing_private_key = file("../provider/testdata/saml-key.pem")
 }
 
 resource "keycloak_saml_user_attribute_protocol_mapper" "saml_user_attribute_mapper" {
@@ -712,6 +712,17 @@ resource "keycloak_oidc_identity_provider" "oidc" {
   default_scopes    = "openid random profile"
   sync_mode         = "FORCE"
   gui_order         = 1
+}
+
+resource "keycloak_oidc_facebook_identity_provider" "facebook" {
+  realm                                   = keycloak_realm.test.id
+  client_id                               = "myclientid.apps.facebookusercontent.com"
+  client_secret                           = "myclientsecret"
+  fetched_fields                          = "picture"
+  default_scopes                          = "openid random profile"
+  accepts_prompt_none_forward_from_client = false
+  sync_mode                               = "FORCE"
+  gui_order                               = 2
 }
 
 resource "keycloak_oidc_google_identity_provider" "google" {
@@ -793,6 +804,18 @@ resource "keycloak_hardcoded_role_identity_provider_mapper" "oidc" {
   }
 }
 
+resource "keycloak_hardcoded_group_identity_provider_mapper" "oidc" {
+  realm                   = keycloak_realm.test.id
+  name                    = "hardcodedGroup"
+  identity_provider_alias = keycloak_oidc_identity_provider.oidc.alias
+  group                   = "testgroup"
+
+  #KC10 support
+  extra_config = {
+    syncMode = "INHERIT"
+  }
+}
+
 resource "keycloak_hardcoded_attribute_identity_provider_mapper" "oidc" {
   realm                   = keycloak_realm.test.id
   name                    = "hardcodedUserSessionAttribute"
@@ -860,6 +883,18 @@ resource "keycloak_hardcoded_role_identity_provider_mapper" "saml" {
   name                    = "hardcodedRole"
   identity_provider_alias = keycloak_saml_identity_provider.saml.alias
   role                    = "testrole"
+
+  #KC10 support
+  extra_config = {
+    syncMode = "INHERIT"
+  }
+}
+
+resource "keycloak_hardcoded_group_identity_provider_mapper" "saml" {
+  realm                   = keycloak_realm.test.id
+  name                    = "hardcodedGroup"
+  identity_provider_alias = keycloak_saml_identity_provider.saml.alias
+  group                   = "testgroup"
 
   #KC10 support
   extra_config = {
@@ -1165,5 +1200,81 @@ resource "keycloak_realm_user_profile" "userprofile" {
 
   group {
     name = "group2"
+  }
+}
+
+resource "keycloak_realm_client_policy_profile" "profile" {
+  name     = "my-profile"
+  realm_id = keycloak_realm.test.id
+  executor {
+    name = "intent-client-bind-checker"
+    configuration = {
+      auto-configure = true
+    }
+  }
+  executor {
+    name = "secure-session"
+  }
+}
+
+resource "keycloak_realm_client_policy_profile_policy" "policy" {
+  name        = "my-profile-policy"
+  realm_id    = keycloak_realm.test.id
+  description = "Some desc"
+  profiles = [
+    keycloak_realm_client_policy_profile.profile.name
+  ]
+
+  condition {
+    name = "client-type"
+    configuration = {
+      "protocol" = "openid-connect"
+    }
+  }
+
+  condition {
+    name = "client-attributes"
+    configuration = {
+      "is-negative-logic" = false
+      "attributes"        = jsonencode([{ "key" : "something", "value" : "other3" }])
+    }
+  }
+}
+
+resource "keycloak_realm_client_policy_profile" "additional_profile" {
+  name     = "additional-profile"
+  realm_id = keycloak_realm.test.id
+  executor {
+    name = "intent-client-bind-checker"
+    configuration = {
+      auto-configure = true
+    }
+  }
+  executor {
+    name = "secure-session"
+  }
+}
+
+resource "keycloak_realm_client_policy_profile_policy" "additional_policy" {
+  name        = "additional-profile-policy"
+  realm_id    = keycloak_realm.test.id
+  description = "Some additional desc"
+  profiles = [
+    keycloak_realm_client_policy_profile.additional_profile.name
+  ]
+
+  condition {
+    name = "client-type"
+    configuration = {
+      "protocol" = "openid-connect"
+    }
+  }
+
+  condition {
+    name = "client-roles"
+    configuration = {
+      "is-negative-logic" = false
+      "roles"        = jsonencode(["Role_A"])
+    }
   }
 }
