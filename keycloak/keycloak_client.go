@@ -29,19 +29,20 @@ import (
 )
 
 type KeycloakClient struct {
-	baseUrl             string
-	authUrl             string
-	realm               string
-	clientCredentials   *ClientCredentials
-	httpClient          *http.Client
-	initialLogin        bool
-	userAgent           string
-	version             *version.Version
-	additionalHeaders   map[string]string
-	debug               bool
-	redHatSSO           bool
-	accessTokenProvided bool
-	Mutex               *mutex.KeyValue
+	baseUrl               string
+	authUrl               string
+	realm                 string
+	clientCredentials     *ClientCredentials
+	httpClient            *http.Client
+	initialLogin          bool
+	userAgent             string
+	version               *version.Version
+	additionalHeaders     map[string]string
+	debug                 bool
+	redHatSSO             bool
+	accessTokenProvided   bool
+	providedServerVersion string
+	Mutex                 *mutex.KeyValue
 }
 
 type ClientCredentials struct {
@@ -72,7 +73,7 @@ var redHatSSO7VersionMap = map[int]string{
 	4: "9.0.17",
 }
 
-func NewKeycloakClient(ctx context.Context, url, basePath, adminUrl, clientId, clientSecret, realm, username, password, accessToken, jwtSigningAlg, jwtSigningKey, jwtToken, jwtTokenFile string, initialLogin bool, clientTimeout int, caCert string, tlsInsecureSkipVerify bool, tlsClientCert string, tlsClientPrivateKey string, userAgent string, redHatSSO bool, additionalHeaders map[string]string) (*KeycloakClient, error) {
+func NewKeycloakClient(ctx context.Context, url, basePath, adminUrl, clientId, clientSecret, realm, username, password, accessToken, jwtSigningAlg, jwtSigningKey, jwtToken, jwtTokenFile string, initialLogin bool, clientTimeout int, caCert string, tlsInsecureSkipVerify bool, tlsClientCert string, tlsClientPrivateKey string, userAgent string, redHatSSO bool, serverVersion string, additionalHeaders map[string]string) (*KeycloakClient, error) {
 	clientCredentials := &ClientCredentials{
 		ClientId:      clientId,
 		ClientSecret:  clientSecret,
@@ -111,17 +112,18 @@ func NewKeycloakClient(ctx context.Context, url, basePath, adminUrl, clientId, c
 	}
 
 	keycloakClient := KeycloakClient{
-		baseUrl:             baseUrl,
-		authUrl:             authUrl,
-		clientCredentials:   clientCredentials,
-		httpClient:          httpClient,
-		initialLogin:        initialLogin,
-		realm:               realm,
-		userAgent:           userAgent,
-		redHatSSO:           redHatSSO,
-		additionalHeaders:   additionalHeaders,
-		accessTokenProvided: accessToken != "",
-		Mutex:               mutex.New(),
+		baseUrl:               baseUrl,
+		authUrl:               authUrl,
+		clientCredentials:     clientCredentials,
+		httpClient:            httpClient,
+		initialLogin:          initialLogin,
+		realm:                 realm,
+		userAgent:             userAgent,
+		redHatSSO:             redHatSSO,
+		providedServerVersion: serverVersion,
+		additionalHeaders:     additionalHeaders,
+		accessTokenProvided:   accessToken != "",
+		Mutex:                 mutex.New(),
 	}
 
 	if accessToken == "" && keycloakClient.initialLogin {
@@ -197,14 +199,30 @@ func (keycloakClient *KeycloakClient) login(ctx context.Context) error {
 		})
 	}
 
-	info, err := keycloakClient.GetServerInfo(ctx)
-	if err != nil {
-		return err
+	var serverVersion string
+
+	// Use provided server version if available, otherwise fetch from server
+	if keycloakClient.providedServerVersion != "" {
+		tflog.Info(ctx, "Using provided server version", map[string]interface{}{
+			"version": keycloakClient.providedServerVersion,
+		})
+		serverVersion = keycloakClient.providedServerVersion
+	} else {
+		info, err := keycloakClient.GetServerInfo(ctx)
+		if err != nil {
+			return err
+		}
+
+		serverVersion = info.SystemInfo.ServerVersion
+
+		// Handle missing SystemInfo.ServerVersion (e.g., RHSSO with disabled version info)
+		if serverVersion == "" {
+			return fmt.Errorf("server version not available from systemInfo and server_version not configured. Please set the server_version provider parameter or KEYCLOAK_SERVER_VERSION environment variable")
+		}
 	}
 
-	serverVersion := info.SystemInfo.ServerVersion
 	if strings.Contains(serverVersion, ".GA") {
-		serverVersion = strings.ReplaceAll(info.SystemInfo.ServerVersion, ".GA", "")
+		serverVersion = strings.ReplaceAll(serverVersion, ".GA", "")
 	} else {
 		regex, err := regexp.Compile(`\.redhat-\w+`)
 
